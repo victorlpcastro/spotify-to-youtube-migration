@@ -237,7 +237,7 @@ MIT License
 
 ## 👨‍💻 Autor
 
-Desenvolvido seguindo o guia de migração Spotify → YouTube
+Desenvolvido por victorlpcastro
 
 ---
 
