@@ -51,12 +51,12 @@ O arquivo `.env` já está configurado com suas credenciais:
 
 ```env
 # Spotify API Credentials
-SPOTIFY_CLIENT_ID=e2587aa02fc747d6825ec65c64ca0697
+SPOTIFY_CLIENT_ID=<seu_client_id>
 SPOTIFY_CLIENT_SECRET=<seu_client_secret>
 SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
 
 # Google/YouTube API Credentials
-GOOGLE_CLIENT_ID=914004421214-l46ukqlf7ugmrfovpb99vhscri3bt630.apps.googleusercontent.com
+GOOGLE_CLIENT_ID=<seu_client_id>
 GOOGLE_CLIENT_SECRET=<seu_client_secret>
 GOOGLE_REDIRECT_URI=http://localhost:8888/google-callback
 
