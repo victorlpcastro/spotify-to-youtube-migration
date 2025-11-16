@@ -35,7 +35,7 @@ Aplicação completa para migrar playlists do Spotify para o YouTube de forma au
 ### 1. Clone o repositório
 
 ```bash
-git clone <url-do-repositorio>
+git clone https://github.com/victorlpcastro/spotify-to-youtube-migration
 cd playlist-migration-app
 ```
 
