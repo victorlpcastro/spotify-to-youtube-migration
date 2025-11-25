@@ -24,85 +24,161 @@ const userTokens: {
   youtube?: YouTubeTokens;
 } = {};
 
+// --- STYLES & TEMPLATES (Para manter o código limpo e consistente) ---
+const globalStyles = `
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    :root {
+      --bg: #121212;
+      --card: #1E1E1E;
+      --text: #E0E0E0;
+      --text-muted: #A0A0A0;
+      --spotify: #1DB954;
+      --youtube: #FF0000;
+      --border: #333;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      align-items: center;
+    }
+    .container {
+      background: var(--card);
+      padding: 40px;
+      border-radius: 24px;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+    h1 { font-size: 24px; margin-bottom: 10px; font-weight: 700; letter-spacing: -0.5px; }
+    h2 { font-size: 18px; margin-top: 30px; margin-bottom: 15px; color: var(--text-muted); font-weight: 600; }
+    p { color: var(--text-muted); line-height: 1.6; }
+    
+    .button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 16px;
+      margin: 10px 0;
+      background-color: #333;
+      color: white;
+      text-decoration: none;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: transform 0.2s, opacity 0.2s;
+      border: 1px solid transparent;
+    }
+    .button:hover { transform: translateY(-2px); opacity: 0.9; }
+    .button.spotify { background-color: var(--spotify); color: #000; }
+    .button.youtube { background-color: rgba(255, 0, 0, 0.1); color: var(--youtube); border-color: var(--youtube); }
+    .button.youtube:hover { background-color: var(--youtube); color: white; }
+    .button.primary { background: white; color: black; }
+    
+    .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 30px; }
+    .status-item { background: #2a2a2a; padding: 15px; border-radius: 12px; font-size: 14px; }
+    .status-item span { display: block; font-weight: bold; margin-bottom: 5px; font-size: 16px; }
+    .connected { color: var(--spotify); }
+    .disconnected { color: #666; }
+
+    /* Playlist Styles */
+    .playlist-list { text-align: left; margin-top: 20px; }
+    .playlist-card {
+      background: #252525;
+      padding: 20px;
+      border-radius: 16px;
+      margin-bottom: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s;
+    }
+    .playlist-card:hover { background: #2e2e2e; }
+    .playlist-info h3 { margin: 0 0 5px 0; font-size: 16px; color: white; }
+    .playlist-info p { margin: 0; font-size: 13px; }
+    .btn-sm { padding: 8px 16px; font-size: 13px; width: auto; margin: 0; }
+    
+    /* Terminal / Logs */
+    pre {
+      background: #000;
+      color: #0f0;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: left;
+      font-family: 'Courier New', monospace;
+      overflow-x: auto;
+      border: 1px solid #333;
+      max-height: 400px;
+      overflow-y: auto;
+      font-size: 13px;
+    }
+    a { color: inherit; }
+  </style>
+`;
+
+// --- ROUTES ---
+
 app.get("/", (req: Request, res: Response) => {
   res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Spotify to YouTube Playlist Migration</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    max-width: 800px;
-                    margin: 50px auto;
-                    padding: 20px;
-                    background-color: #f5f5f5;
-                }
-                .container {
-                    background: white;
-                    padding: 30px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }
-                h1 { color: #1DB954; }
-                .button {
-                    display: inline-block;
-                    padding: 15px 30px;
-                    margin: 10px;
-                    background-color: #1DB954;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 25px;
-                    font-weight: bold;
-                    transition: background-color 0.3s;
-                }
-                .button:hover { background-color: #1ed760; }
-                .button.youtube { background-color: #FF0000; }
-                .button.youtube:hover { background-color: #cc0000; }
-                .status {
-                    margin-top: 20px;
-                    padding: 15px;
-                    border-radius: 5px;
-                    background-color: #e8f5e9;
-                }
-                .warning {
-                    background-color: #fff3cd;
-                    padding: 15px;
-                    border-radius: 5px;
-                    margin-bottom: 20px;
-                }
-            </style>
+            <title>Migration Tool</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            ${globalStyles}
         </head>
         <body>
             <div class="container">
-                <h1>🎵 Spotify to YouTube Playlist Migration</h1>
-                <p>Migre suas playlists do Spotify para o YouTube facilmente!</p>
+                <h1>Transferência de Playlists</h1>
+                <p>Mova suas músicas do Spotify para o YouTube de forma simples.</p>
                 
-                <div class="warning">
-                    <strong>⚠️ Importante:</strong> Você precisa autorizar ambas as contas antes de migrar.
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span>Spotify</span>
+                        ${
+                          userTokens.spotify
+                            ? '<b class="connected">● Conectado</b>'
+                            : '<b class="disconnected">○ Pendente</b>'
+                        }
+                    </div>
+                    <div class="status-item">
+                        <span>YouTube</span>
+                        ${
+                          userTokens.youtube
+                            ? '<b class="connected">● Conectado</b>'
+                            : '<b class="disconnected">○ Pendente</b>'
+                        }
+                    </div>
                 </div>
+
+                ${
+                  !userTokens.spotify
+                    ? `<a href="/auth/spotify" class="button spotify">Conectar Spotify</a>`
+                    : ""
+                }
                 
-                <h2>Passo 1: Conectar Spotify</h2>
-                <a href="/auth/spotify" class="button">🎧 Conectar com Spotify</a>
-                
-                <h2>Passo 2: Conectar YouTube</h2>
-                <a href="/auth/youtube" class="button youtube">📺 Conectar com YouTube</a>
-                
-                <div class="status">
-                    <h3>Status:</h3>
-                    <p>Spotify: ${
-                      userTokens.spotify ? "✅ Conectado" : "❌ Não conectado"
-                    }</p>
-                    <p>YouTube: ${
-                      userTokens.youtube ? "✅ Conectado" : "❌ Não conectado"
-                    }</p>
-                </div>
-                
+                ${
+                  !userTokens.youtube
+                    ? `<a href="/auth/youtube" class="button youtube">Conectar YouTube</a>`
+                    : ""
+                }
+
                 ${
                   userTokens.spotify && userTokens.youtube
                     ? `
-                    <h2>Passo 3: Migrar Playlist</h2>
-                    <a href="/playlists" class="button">📋 Ver Minhas Playlists</a>
+                    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #333;">
+                        <p>Tudo pronto!</p>
+                        <a href="/playlists" class="button primary">Ver Minhas Playlists →</a>
+                    </div>
                 `
                     : ""
                 }
@@ -119,10 +195,7 @@ app.get("/auth/spotify", (req: Request, res: Response) => {
 
 app.get("/callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;
-
-  if (!code) {
-    return res.status(400).send("Código de autorização não fornecido");
-  }
+  if (!code) return res.status(400).send("Código não fornecido");
 
   try {
     const tokens = await exchangeSpotifyCodeForToken(code);
@@ -132,17 +205,21 @@ app.get("/callback", async (req: Request, res: Response) => {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Spotify Conectado</title>
-                <meta http-equiv="refresh" content="3;url=/" />
+                <title>Sucesso</title>
+                <meta http-equiv="refresh" content="2;url=/" />
+                ${globalStyles}
             </head>
-            <body style="font-family: Arial; text-align: center; padding: 50px;">
-                <h1>✅ Spotify conectado com sucesso!</h1>
-                <p>Redirecionando...</p>
+            <body>
+                <div class="container">
+                    <h1 style="color: var(--spotify); font-size: 40px;">✓</h1>
+                    <h1>Spotify Conectado</h1>
+                    <p>Redirecionando...</p>
+                </div>
             </body>
             </html>
         `);
   } catch (error: any) {
-    res.status(500).send(`Erro ao conectar Spotify: ${error.message}`);
+    res.status(500).send(`Erro: ${error.message}`);
   }
 });
 
@@ -153,10 +230,7 @@ app.get("/auth/youtube", (req: Request, res: Response) => {
 
 app.get("/google-callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;
-
-  if (!code) {
-    return res.status(400).send("Código de autorização não fornecido");
-  }
+  if (!code) return res.status(400).send("Código não fornecido");
 
   try {
     const tokens = await exchangeYouTubeCodeForToken(code);
@@ -166,26 +240,26 @@ app.get("/google-callback", async (req: Request, res: Response) => {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>YouTube Conectado</title>
-                <meta http-equiv="refresh" content="3;url=/" />
+                <title>Sucesso</title>
+                <meta http-equiv="refresh" content="2;url=/" />
+                ${globalStyles}
             </head>
-            <body style="font-family: Arial; text-align: center; padding: 50px;">
-                <h1>✅ YouTube conectado com sucesso!</h1>
-                <p>Redirecionando...</p>
+            <body>
+                <div class="container">
+                    <h1 style="color: var(--youtube); font-size: 40px;">✓</h1>
+                    <h1>YouTube Conectado</h1>
+                    <p>Redirecionando...</p>
+                </div>
             </body>
             </html>
         `);
   } catch (error: any) {
-    res.status(500).send(`Erro ao conectar YouTube: ${error.message}`);
+    res.status(500).send(`Erro: ${error.message}`);
   }
 });
 
 app.get("/playlists", async (req: Request, res: Response) => {
-  if (!userTokens.spotify) {
-    return res
-      .status(401)
-      .send('Spotify não conectado. <a href="/auth/spotify">Conectar</a>');
-  }
+  if (!userTokens.spotify) return res.redirect("/");
 
   try {
     const spotifyService = new SpotifyService(userTokens.spotify.access_token);
@@ -195,63 +269,45 @@ app.get("/playlists", async (req: Request, res: Response) => {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Minhas Playlists</title>
-                <style>
-                    body { font-family: Arial; max-width: 900px; margin: 20px auto; padding: 20px; }
-                    .playlist {
-                        border: 1px solid #ddd;
-                        padding: 15px;
-                        margin: 10px 0;
-                        border-radius: 5px;
-                        background: #f9f9f9;
-                    }
-                    .button {
-                        background: #1DB954;
-                        color: white;
-                        padding: 10px 20px;
-                        text-decoration: none;
-                        border-radius: 5px;
-                        display: inline-block;
-                        margin-top: 10px;
-                    }
-                    .button:hover { background: #1ed760; }
-                </style>
+                <title>Selecionar Playlist</title>
+                ${globalStyles}
             </head>
             <body>
-                <h1>🎵 Suas Playlists do Spotify</h1>
-                <p><a href="/">← Voltar</a></p>
+                <div class="container" style="max-width: 800px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                        <h1>Suas Playlists</h1>
+                        <a href="/" style="color: #666; text-decoration: none; font-size: 14px;">✕ Fechar</a>
+                    </div>
+                    <div class="playlist-list">
         `;
 
     playlists.forEach((playlist) => {
       html += `
-                <div class="playlist">
-                    <h3>${playlist.name}</h3>
-                    <p>${playlist.description || "Sem descrição"}</p>
-                    <p><strong>Músicas:</strong> ${playlist.trackCount}</p>
-                    <a href="/migrate/${
-                      playlist.id
-                    }" class="button">🚀 Migrar para YouTube</a>
+                <div class="playlist-card">
+                    <div class="playlist-info">
+                        <h3>${playlist.name}</h3>
+                        <p style="opacity: 0.7;">${playlist.trackCount} músicas</p>
+                    </div>
+                    <a href="/migrate/${playlist.id}" class="button btn-sm primary">Migrar</a>
                 </div>
             `;
     });
 
     html += `
+                    </div>
+                </div>
             </body>
             </html>
         `;
 
     res.send(html);
   } catch (error: any) {
-    res.status(500).send(`Erro: ${error.message}`);
+    res.status(500).send(error.message);
   }
 });
 
 app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
-  if (!userTokens.spotify || !userTokens.youtube) {
-    return res
-      .status(401)
-      .send('Você precisa conectar ambas as contas. <a href="/">Voltar</a>');
-  }
+  if (!userTokens.spotify || !userTokens.youtube) return res.redirect("/");
 
   const { playlistId } = req.params;
   const privacyStatus =
@@ -266,20 +322,19 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
       youtubeService
     );
 
+    // Initial HTML setup with streaming log style
     res.write(`
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Migrando Playlist</title>
-                <style>
-                    body { font-family: Arial; max-width: 900px; margin: 20px auto; padding: 20px; }
-                    pre { background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; }
-                </style>
+                <title>Processando...</title>
+                ${globalStyles}
             </head>
             <body>
-                <h1>🚀 Migrando Playlist...</h1>
-                <p>Isso pode levar alguns minutos. Não feche esta página.</p>
-                <pre>
+                <div class="container">
+                    <h1 style="margin-bottom: 20px;">Transferindo...</h1>
+                    <p style="font-size: 14px; margin-bottom: 20px;">Não feche esta janela.</p>
+                    <pre id="logs">
         `);
 
     const originalLog = console.log;
@@ -294,24 +349,34 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
       privacyStatus
     );
 
-    // Restaura console.log
     console.log = originalLog;
 
     res.write(`
-                </pre>
-                <h2>✅ Migração Concluída!</h2>
-                <p><a href="${result.youtubePlaylistUrl}" target="_blank">🎵 Abrir Playlist no YouTube</a></p>
-                <p><a href="/playlists">← Voltar para Playlists</a></p>
+                    </pre>
+                    <div style="margin-top: 30px;">
+                        <h2 style="color: var(--spotify);">Sucesso!</h2>
+                        <a href="${result.youtubePlaylistUrl}" target="_blank" class="button youtube">Abrir no YouTube</a>
+                        <a href="/playlists" style="display:block; margin-top:15px; color: #666; text-decoration: none;">Voltar</a>
+                    </div>
+                </div>
+                <script>
+                    // Auto-scroll logs
+                    const logContainer = document.getElementById('logs');
+                    setInterval(() => {
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }, 100);
+                </script>
             </body>
             </html>
         `);
     res.end();
   } catch (error: any) {
     res.write(`
-                </pre>
-                <h2>❌ Erro na Migração</h2>
-                <p>${error.message}</p>
-                <p><a href="/playlists">← Voltar</a></p>
+                    </pre>
+                    <h2 style="color: #ff4444;">Erro</h2>
+                    <p>${error.message}</p>
+                    <a href="/playlists" class="button">Tentar Novamente</a>
+                </div>
             </body>
             </html>
         `);
@@ -320,10 +385,5 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
 });
 
 app.listen(PORT, () => {
-  console.log("=".repeat(60));
-  console.log("🎵 Spotify to YouTube Playlist Migration App");
-  console.log("=".repeat(60));
-  console.log(`🚀 Servidor rodando em: http://localhost:${PORT}`);
-  console.log(`📋 Acesse http://localhost:${PORT} para começar`);
-  console.log("=".repeat(60));
+  console.log("Servidor rodando na porta " + PORT);
 });
