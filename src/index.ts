@@ -1,5 +1,8 @@
 import express, { Request, Response } from "express";
 import session from "express-session";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import xss from "xss-clean";
 import { PORT } from "./config/api-config";
 import { sessionConfig, redisClient } from "./config/session-config";
 import {
@@ -26,6 +29,44 @@ declare module "express-session" {
 }
 
 const app = express();
+
+// ===== SEGURANÇA =====
+
+// 1. Helmet - Headers de segurança (desabilitando CSP por enquanto devido ao HTML inline)
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Desabilitar CSP pois usamos muito HTML inline
+  })
+);
+
+// 2. XSS Protection
+app.use(xss());
+
+// 3. Rate Limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // 100 requisições por IP
+  message: "Muitas requisicoes deste IP. Tente novamente em 15 minutos.",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hora
+  max: 10, // 10 tentativas de auth por hora
+  message: "Muitas tentativas de autenticacao. Tente novamente em 1 hora.",
+});
+
+const migrationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hora
+  max: 5, // 5 migrações por hora
+  message: "Limite de migracoes atingido. Tente novamente em 1 hora.",
+});
+
+// Aplicar rate limiting geral
+app.use(limiter);
+
+// ===== FIM SEGURANÇA =====
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -201,7 +242,8 @@ app.get("/", (req: Request, res: Response) => {
     `);
 });
 
-app.get("/auth/spotify", (req: Request, res: Response) => {
+// Aplicar rate limiter nas rotas de autenticação
+app.get("/auth/spotify", authLimiter, (req: Request, res: Response) => {
   const stateCode = TempTokenManager.generateStateCode();
 
   if (req.session.youtubeTokens) {
@@ -297,7 +339,7 @@ app.get("/callback", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/auth/youtube", (req: Request, res: Response) => {
+app.get("/auth/youtube", authLimiter, (req: Request, res: Response) => {
   const stateCode = TempTokenManager.generateStateCode();
 
   if (req.session.spotifyTokens) {
@@ -467,27 +509,33 @@ app.get("/playlists", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
-  if (!req.session.spotifyTokens || !req.session.youtubeTokens)
-    return res.redirect("/");
+app.get(
+  "/migrate/:playlistId",
+  migrationLimiter,
+  async (req: Request, res: Response) => {
+    if (!req.session.spotifyTokens || !req.session.youtubeTokens)
+      return res.redirect("/");
 
-  const { playlistId } = req.params;
-  const privacyStatus =
-    (req.query.privacy as "private" | "public" | "unlisted") || "private";
+    const { playlistId } = req.params;
+    const privacyStatus =
+      (req.query.privacy as "private" | "public" | "unlisted") || "private";
 
-  try {
-    const spotifyService = new SpotifyService(
-      req.session.spotifyTokens.access_token
-    );
-    const youtubeClient = getAuthenticatedClient(req.session.youtubeTokens);
-    const youtubeService = new YouTubeService(youtubeClient);
-    const migrationController = new MigrationController(
-      spotifyService,
-      youtubeService
-    );
+    try {
+      const spotifyService = new SpotifyService(
+        req.session.spotifyTokens.access_token
+      );
+      const youtubeClient = getAuthenticatedClient(req.session.youtubeTokens);
+      const youtubeService = new YouTubeService(youtubeClient);
+      const migrationController = new MigrationController(
+        spotifyService,
+        youtubeService
+      );
 
-    // Initial HTML setup with streaming log style
-    res.write(`
+      // Definir Content-Type como HTML
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+
+      // Initial HTML setup with streaming log style
+      res.write(`
             <!DOCTYPE html>
             <html>
             <head>
@@ -649,52 +697,52 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
             </html>
         `);
 
-    const originalLog = console.log;
-    let trackCount = 0;
-    let totalTracks = 0;
+      const originalLog = console.log;
+      let trackCount = 0;
+      let totalTracks = 0;
 
-    console.log = (...args: any[]) => {
-      const message = args.join(" ");
+      console.log = (...args: any[]) => {
+        const message = args.join(" ");
 
-      if (message.includes("✓ Playlist encontrada:")) {
-        const match = message.match(/\((\d+) músicas\)/);
-        if (match) {
-          totalTracks = parseInt(match[1]);
+        if (message.includes("✓ Playlist encontrada:")) {
+          const match = message.match(/\((\d+) músicas\)/);
+          if (match) {
+            totalTracks = parseInt(match[1]);
+          }
         }
-      }
 
-      if (message.match(/\[\d+\/\d+\]/)) {
-        trackCount++;
-        const trackMatch = message.match(/\] \((\d+)%\) (.+)/);
-        if (trackMatch) {
-          const trackName = trackMatch[2];
-          const isSuccess = !message.includes("✗");
-          res.write(
-            `<script>updateProgress(${trackCount}, ${totalTracks}, ${JSON.stringify(
-              trackName
-            )}, ${isSuccess});</script>`
-          );
+        if (message.match(/\[\d+\/\d+\]/)) {
+          trackCount++;
+          const trackMatch = message.match(/\] \((\d+)%\) (.+)/);
+          if (trackMatch) {
+            const trackName = trackMatch[2];
+            const isSuccess = !message.includes("✗");
+            res.write(
+              `<script>updateProgress(${trackCount}, ${totalTracks}, ${JSON.stringify(
+                trackName
+              )}, ${isSuccess});</script>`
+            );
+          }
         }
-      }
 
-      originalLog(...args);
-    };
+        originalLog(...args);
+      };
 
-    const result = await migrationController.migratePlaylist(
-      playlistId,
-      privacyStatus
-    );
+      const result = await migrationController.migratePlaylist(
+        playlistId,
+        privacyStatus
+      );
 
-    console.log = originalLog;
+      console.log = originalLog;
 
-    res.write(
-      `<script>showFinalResult(${JSON.stringify(
-        result.youtubePlaylistUrl
-      )});</script>`
-    );
-    res.end();
-  } catch (error: any) {
-    res.write(`
+      res.write(
+        `<script>showFinalResult(${JSON.stringify(
+          result.youtubePlaylistUrl
+        )});</script>`
+      );
+      res.end();
+    } catch (error: any) {
+      res.write(`
                 <div id="finalResult" style="display: block; margin-top: 30px; text-align: center;">
                     <h2 style="color: #ff4444; margin-bottom: 20px;">Erro na migracao</h2>
                     <div style="background: #2a2a2a; padding: 20px; border-radius: 12px; margin: 20px 0; text-align: left;">
@@ -706,9 +754,10 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
             </body>
             </html>
         `);
-    res.end();
+      res.end();
+    }
   }
-});
+);
 
 // Capturar exceções não tratadas
 process.on("uncaughtException", (error) => {
