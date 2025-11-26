@@ -13,8 +13,7 @@ export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 export const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI || "http://localhost:8888/google-callback";
-export const YOUTUBE_API_KEY =
-  process.env.YOUTUBE_API_KEY || "AIzaSyDCY3-Pn930ML447zlM7nRdcOQqG3L0IgY";
+export const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || "";
 
 // Server Configuration
 export const PORT = process.env.PORT || 8888;
