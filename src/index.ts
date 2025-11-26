@@ -286,8 +286,7 @@ app.get("/callback", async (req: Request, res: Response) => {
             </head>
             <body>
                 <div class="container">
-                    <h1 style="color: var(--spotify); font-size: 40px;">✓</h1>
-                    <h1>Spotify Conectado</h1>
+                    <h1 style="color: var(--spotify);">Spotify Conectado</h1>
                     <p>Redirecionando...</p>
                 </div>
             </body>
@@ -383,8 +382,7 @@ app.get("/google-callback", async (req: Request, res: Response) => {
             </head>
             <body>
                 <div class="container">
-                    <h1 style="color: var(--youtube); font-size: 40px;">✓</h1>
-                    <h1>YouTube Conectado</h1>
+                    <h1 style="color: var(--youtube);">YouTube Conectado</h1>
                     <p>Redirecionando...</p>
                 </div>
             </body>
@@ -399,10 +397,34 @@ app.get("/playlists", async (req: Request, res: Response) => {
   if (!req.session.spotifyTokens) return res.redirect("/");
 
   try {
-    const spotifyService = new SpotifyService(
+    let spotifyService = new SpotifyService(
       req.session.spotifyTokens.access_token
     );
-    const playlists = await spotifyService.getUserPlaylists();
+
+    let playlists;
+    try {
+      playlists = await spotifyService.getUserPlaylists();
+    } catch (error: any) {
+      // Se o token expirou, tentar renovar
+      if (
+        error.message.includes("Falha ao buscar playlists") &&
+        req.session.spotifyTokens.refresh_token
+      ) {
+        console.log("Token do Spotify expirado, renovando...");
+        const { refreshSpotifyToken } = await import("./auth/spotify-auth");
+        const newTokens = await refreshSpotifyToken(
+          req.session.spotifyTokens.refresh_token
+        );
+        req.session.spotifyTokens = newTokens;
+
+        // Tentar novamente com o novo token
+        spotifyService = new SpotifyService(newTokens.access_token);
+        playlists = await spotifyService.getUserPlaylists();
+        console.log("Token renovado com sucesso!");
+      } else {
+        throw error;
+      }
+    }
 
     let html = `
             <!DOCTYPE html>
@@ -415,7 +437,7 @@ app.get("/playlists", async (req: Request, res: Response) => {
                 <div class="container" style="max-width: 800px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
                         <h1>Suas Playlists</h1>
-                        <a href="/" style="color: #666; text-decoration: none; font-size: 14px;">✕ Fechar</a>
+                        <a href="/" style="color: #666; text-decoration: none; font-size: 14px;">Voltar</a>
                     </div>
                     <div class="playlist-list">
         `;
@@ -469,20 +491,192 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Processando...</title>
+                <title>Migrando Playlist...</title>
                 ${globalStyles}
+                <style>
+                    .progress-container {
+                        width: 100%;
+                        background: #2a2a2a;
+                        border-radius: 12px;
+                        padding: 4px;
+                        margin: 20px 0;
+                    }
+                    .progress-bar {
+                        height: 30px;
+                        background: linear-gradient(90deg, var(--spotify), var(--youtube));
+                        border-radius: 8px;
+                        transition: width 0.3s ease;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-weight: bold;
+                        font-size: 14px;
+                    }
+                    .current-track {
+                        background: #2a2a2a;
+                        padding: 20px;
+                        border-radius: 12px;
+                        margin: 20px 0;
+                        text-align: center;
+                    }
+                    .track-name {
+                        font-size: 20px;
+                        font-weight: 600;
+                        color: white;
+                        margin-bottom: 8px;
+                    }
+                    .track-status {
+                        font-size: 14px;
+                        color: #888;
+                    }
+                    .stats {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 15px;
+                        margin-top: 20px;
+                    }
+                    .stat-box {
+                        background: #2a2a2a;
+                        padding: 15px;
+                        border-radius: 12px;
+                        text-align: center;
+                    }
+                    .stat-value {
+                        font-size: 24px;
+                        font-weight: bold;
+                        color: var(--spotify);
+                    }
+                    .stat-label {
+                        font-size: 12px;
+                        color: #888;
+                        margin-top: 5px;
+                    }
+                    .spinner {
+                        border: 3px solid #2a2a2a;
+                        border-top: 3px solid var(--spotify);
+                        border-radius: 50%;
+                        width: 40px;
+                        height: 40px;
+                        animation: spin 1s linear infinite;
+                        margin: 20px auto;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
             </head>
             <body>
-                <div class="container">
-                    <h1 style="margin-bottom: 20px;">Transferindo...</h1>
-                    <p style="font-size: 14px; margin-bottom: 20px;">Não feche esta janela.</p>
-                    <pre id="logs">
+                <div class="container" style="max-width: 700px;">
+                    <h1 style="margin-bottom: 10px;">Migrando Playlist</h1>
+                    <p style="font-size: 14px; color: #888; margin-bottom: 30px;">Aguarde enquanto transferimos suas musicas...</p>
+                    
+                    <div class="progress-container">
+                        <div class="progress-bar" id="progressBar" style="width: 0%;">0%</div>
+                    </div>
+                    
+                    <div class="current-track">
+                        <div class="spinner"></div>
+                        <div class="track-name" id="currentTrack">Iniciando migracao...</div>
+                        <div class="track-status" id="trackStatus">Preparando...</div>
+                    </div>
+                    
+                    <div class="stats">
+                        <div class="stat-box">
+                            <div class="stat-value" id="successCount">0</div>
+                            <div class="stat-label">Migradas</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="failCount">0</div>
+                            <div class="stat-label">Falhas</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="timeRemaining">--</div>
+                            <div class="stat-label">Tempo restante</div>
+                        </div>
+                    </div>
+                    
+                    <div id="finalResult" style="display: none; margin-top: 30px; text-align: center;">
+                        <h2 style="color: var(--spotify);">Migracao Concluida!</h2>
+                        <a href="" id="playlistLink" target="_blank" class="button youtube">Abrir no YouTube</a>
+                        <a href="/playlists" style="display:block; margin-top:15px; color: #666; text-decoration: none;">Voltar para playlists</a>
+                    </div>
+                </div>
+                <script>
+                    let totalTracks = 0;
+                    let currentIndex = 0;
+                    let successCount = 0;
+                    let failCount = 0;
+                    let startTime = Date.now();
+                    
+                    function updateProgress(current, total, trackName, success) {
+                        currentIndex = current;
+                        totalTracks = total;
+                        
+                        const percentage = Math.round((current / total) * 100);
+                        document.getElementById('progressBar').style.width = percentage + '%';
+                        document.getElementById('progressBar').textContent = percentage + '%';
+                        
+                        document.getElementById('currentTrack').textContent = trackName;
+                        document.getElementById('trackStatus').textContent = success ? 'Adicionada com sucesso' : 'Nao encontrada';
+                        
+                        if (success) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                        
+                        document.getElementById('successCount').textContent = successCount;
+                        document.getElementById('failCount').textContent = failCount;
+                        
+                        const elapsed = (Date.now() - startTime) / 1000;
+                        const avgTime = elapsed / current;
+                        const remaining = Math.round((total - current) * avgTime);
+                        const minutes = Math.floor(remaining / 60);
+                        const seconds = remaining % 60;
+                        document.getElementById('timeRemaining').textContent = minutes + 'm ' + seconds + 's';
+                    }
+                    
+                    function showFinalResult(url) {
+                        document.querySelector('.progress-container').style.display = 'none';
+                        document.querySelector('.current-track').style.display = 'none';
+                        document.getElementById('finalResult').style.display = 'block';
+                        document.getElementById('playlistLink').href = url;
+                    }
+                </script>
+            </body>
+            </html>
         `);
 
     const originalLog = console.log;
+    let trackCount = 0;
+    let totalTracks = 0;
+
     console.log = (...args: any[]) => {
-      const message = args.join(" ") + "\n";
-      res.write(message);
+      const message = args.join(" ");
+
+      if (message.includes("✓ Playlist encontrada:")) {
+        const match = message.match(/\((\d+) músicas\)/);
+        if (match) {
+          totalTracks = parseInt(match[1]);
+        }
+      }
+
+      if (message.match(/\[\d+\/\d+\]/)) {
+        trackCount++;
+        const trackMatch = message.match(/\] \((\d+)%\) (.+)/);
+        if (trackMatch) {
+          const trackName = trackMatch[2];
+          const isSuccess = !message.includes("✗");
+          res.write(
+            `<script>updateProgress(${trackCount}, ${totalTracks}, ${JSON.stringify(
+              trackName
+            )}, ${isSuccess});</script>`
+          );
+        }
+      }
+
       originalLog(...args);
     };
 
@@ -493,31 +687,21 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
 
     console.log = originalLog;
 
-    res.write(`
-                    </pre>
-                    <div style="margin-top: 30px;">
-                        <h2 style="color: var(--spotify);">Sucesso!</h2>
-                        <a href="${result.youtubePlaylistUrl}" target="_blank" class="button youtube">Abrir no YouTube</a>
-                        <a href="/playlists" style="display:block; margin-top:15px; color: #666; text-decoration: none;">Voltar</a>
-                    </div>
-                </div>
-                <script>
-                    // Auto-scroll logs
-                    const logContainer = document.getElementById('logs');
-                    setInterval(() => {
-                        logContainer.scrollTop = logContainer.scrollHeight;
-                    }, 100);
-                </script>
-            </body>
-            </html>
-        `);
+    res.write(
+      `<script>showFinalResult(${JSON.stringify(
+        result.youtubePlaylistUrl
+      )});</script>`
+    );
     res.end();
   } catch (error: any) {
     res.write(`
-                    </pre>
-                    <h2 style="color: #ff4444;">Erro</h2>
-                    <p>${error.message}</p>
+                <div id="finalResult" style="display: block; margin-top: 30px; text-align: center;">
+                    <h2 style="color: #ff4444; margin-bottom: 20px;">Erro na migracao</h2>
+                    <div style="background: #2a2a2a; padding: 20px; border-radius: 12px; margin: 20px 0; text-align: left;">
+                        <p style="color: #e0e0e0; line-height: 1.6; margin: 0;">${error.message}</p>
+                    </div>
                     <a href="/playlists" class="button">Tentar Novamente</a>
+                </div>
                 </div>
             </body>
             </html>

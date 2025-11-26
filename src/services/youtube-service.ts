@@ -1,9 +1,11 @@
 import { google, youtube_v3 } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
+import { YOUTUBE_API_KEY } from "../config/api-config";
 
 export class YouTubeService {
   private youtube: youtube_v3.Youtube;
   private oauth2Client: OAuth2Client;
+  private youtubeWithApiKey: youtube_v3.Youtube;
 
   constructor(oauth2Client: OAuth2Client) {
     this.oauth2Client = oauth2Client;
@@ -11,6 +13,19 @@ export class YouTubeService {
       version: "v3",
       auth: oauth2Client,
     });
+    // Cliente separado com API Key para buscas (quota maior)
+    this.youtubeWithApiKey = google.youtube({
+      version: "v3",
+      auth: YOUTUBE_API_KEY,
+    });
+
+    if (YOUTUBE_API_KEY) {
+      console.log("YouTube API Key configurada - Buscas usarao a API Key");
+    } else {
+      console.log(
+        "AVISO: YouTube API Key nao encontrada - Buscas usarao OAuth"
+      );
+    }
   }
 
   async createPlaylist(
@@ -38,24 +53,29 @@ export class YouTubeService {
         url: `https://www.youtube.com/playlist?list=${playlistId}`,
       };
     } catch (error: any) {
-      console.error("❌ Erro ao criar playlist no YouTube:", error.message);
-      console.error("📊 Status do erro:", error.response?.status);
-      console.error(
-        "📋 Dados do erro:",
-        JSON.stringify(error.response?.data, null, 2)
-      );
-      console.error(
-        "🔑 Token presente:",
-        !!this.oauth2Client.credentials.access_token
-      );
-      // ⚠️ REMOVIDO: Não logue credenciais completas por segurança
+      console.error("Erro ao criar playlist no YouTube:", error.message);
+      console.error("Status do erro:", error.response?.status);
+
+      // Verificar se é erro de quota
+      if (error.response?.status === 403 && error.message.includes("quota")) {
+        throw new Error(
+          "Quota do YouTube API excedida. A API Key e usada apenas para buscas. " +
+            "Para criar playlists e adicionar videos, e necessario OAuth, que tem quota diaria limitada (10.000 unidades/dia). " +
+            "Cada playlist criada custa 50 unidades, cada video adicionado custa 50 unidades. " +
+            "A quota reseta a meia-noite (Horario do Pacifico). " +
+            "Solucao: Aguarde ate amanha ou use outra conta OAuth do Google."
+        );
+      }
+
       throw new Error(`Falha ao criar playlist no YouTube: ${error.message}`);
     }
   }
 
   async searchVideo(query: string): Promise<string | null> {
     try {
-      const response = await this.youtube.search.list({
+      // Usar API Key para buscas (quota maior e mais eficiente)
+      console.log(`[API Key] Buscando: ${query.substring(0, 50)}...`);
+      const response = await this.youtubeWithApiKey.search.list({
         part: ["snippet"],
         q: query,
         type: ["video"],
@@ -65,11 +85,37 @@ export class YouTubeService {
 
       const items = response.data?.items;
       if (items && items.length > 0 && items[0].id?.videoId) {
+        console.log(`[API Key] Video encontrado: ${items[0].id.videoId}`);
         return items[0].id.videoId;
       }
 
       return null;
     } catch (error: any) {
+      console.log(`[API Key] Erro na busca, tentando fallback com OAuth...`);
+      // Se falhar com API Key, tentar com OAuth como fallback
+      try {
+        const fallbackResponse = await this.youtube.search.list({
+          part: ["snippet"],
+          q: query,
+          type: ["video"],
+          maxResults: 1,
+          videoCategoryId: "10",
+        });
+
+        const fallbackItems = fallbackResponse.data?.items;
+        if (
+          fallbackItems &&
+          fallbackItems.length > 0 &&
+          fallbackItems[0].id?.videoId
+        ) {
+          return fallbackItems[0].id.videoId;
+        }
+      } catch (fallbackError: any) {
+        console.error(
+          "Erro na busca (API Key e OAuth):",
+          fallbackError.message
+        );
+      }
       return null;
     }
   }

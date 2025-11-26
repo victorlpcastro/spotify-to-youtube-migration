@@ -39,7 +39,7 @@ export class MigrationController {
       );
       console.log(`✓ Playlist criada: ${youtubePlaylist.url}\n`);
 
-      console.log("🔍 Iniciando migração das músicas...\n");
+      console.log("Iniciando migração das músicas...\n");
 
       const result: MigrationResult = {
         playlistName: playlistInfo.name,
@@ -120,7 +120,7 @@ export class MigrationController {
 
       return result;
     } catch (error: any) {
-      console.error("\n❌ Erro durante a migração:", error.message);
+      console.error("\n Erro durante a migração:", error.message);
       throw new Error(`Falha na migração da playlist: ${error.message}`);
     }
   }

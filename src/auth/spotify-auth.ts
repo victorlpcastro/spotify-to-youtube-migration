@@ -60,3 +60,35 @@ export const exchangeSpotifyCodeForToken = async (
     throw new Error("Falha na autenticação do Spotify");
   }
 };
+
+export const refreshSpotifyToken = async (
+  refreshToken: string
+): Promise<SpotifyTokens> => {
+  try {
+    const response = await axios.post(
+      SPOTIFY_TOKEN_URL,
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization:
+            "Basic " +
+            Buffer.from(
+              SPOTIFY_CLIENT_ID + ":" + SPOTIFY_CLIENT_SECRET
+            ).toString("base64"),
+        },
+      }
+    );
+
+    // Se o refresh_token não foi retornado, manter o antigo
+    return {
+      ...response.data,
+      refresh_token: response.data.refresh_token || refreshToken,
+    } as SpotifyTokens;
+  } catch (error: any) {
+    throw new Error("Falha ao renovar token do Spotify");
+  }
+};
