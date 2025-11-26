@@ -143,7 +143,6 @@ export class MigrationController {
 
       return playlists;
     } catch (error: any) {
-      console.error("❌ Erro ao listar playlists:", error.message);
       throw error;
     }
   }

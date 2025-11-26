@@ -8,68 +8,137 @@
 - **Ação:** Removidos logs que exibiam tokens completos
 - **Arquivos:** `youtube-auth.ts`, `youtube-service.ts`
 
+### 2. Armazenamento Seguro de Sessões com Redis
+
+- **Status:** ✅ IMPLEMENTADO
+- **Solução:** Redis Store configurado com connect-redis v6
+- **Arquivos:** `session-config.ts`, `index.ts`
+- **Benefícios:**
+  - Sessões persistem após reinicialização do servidor
+  - Tokens armazenados de forma segura no Redis
+  - TTL de 24 horas configurado
+  - Suporte para múltiplos usuários
+
+### 3. OAuth State Parameter
+
+- **Status:** ✅ IMPLEMENTADO
+- **Solução:** State parameter nas URLs do OAuth para prevenir CSRF
+- **Arquivos:** `spotify-auth.ts`, `youtube-auth.ts`, `index.ts`
+- **Benefícios:**
+  - Tokens preservados durante redirects OAuth
+  - Proteção contra ataques CSRF
+  - Fluxo de autenticação mais seguro
+
 ---
 
 ## ⚠️ Problemas Pendentes (Implementar antes do Deploy)
 
-### 1. Armazenamento Inseguro de Tokens 🚨 CRÍTICO
+### 1. Falta de Validação de Input ⚠️ ALTO
 
-**Problema Atual:**
-
-```typescript
-const userTokens: {
-  spotify?: SpotifyTokens;
-  youtube?: YouTubeTokens;
-} = {};
-```
-
-**Riscos:**
-
-- Tokens perdidos ao reiniciar servidor
-- Não suporta múltiplos usuários
-- Vulnerável a memory leaks
-
-**Solução Recomendada:**
+**Adicionar validação:**
 
 ```bash
-npm install express-session redis connect-redis
+npm install joi
 ```
 
 ```typescript
-import session from "express-session";
-import RedisStore from "connect-redis";
-import { createClient } from "redis";
+import Joi from "joi";
 
-// Criar cliente Redis
-const redisClient = createClient({
-  url: process.env.REDIS_URL || "redis://localhost:6379",
-});
-redisClient.connect();
+const playlistSchema = Joi.string()
+  .pattern(/^[a-zA-Z0-9]+$/)
+  .required();
 
-// Configurar sessões
-app.use(
-  session({
-    store: new RedisStore({ client: redisClient }),
-    secret: process.env.SESSION_SECRET || "seu-secret-super-seguro",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production", // HTTPS apenas em produção
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24, // 24 horas
-    },
-  })
-);
-
-// Usar sessões em vez de variável global
-app.get("/callback", (req, res) => {
-  req.session.spotifyTokens = tokens;
+app.get("/migrate/:playlistId", (req, res) => {
+  const { error } = playlistSchema.validate(req.params.playlistId);
+  if (error) {
+    return res.status(400).send("Playlist ID inválido");
+  }
 });
 ```
 
 ---
 
-### 2. Falta de Validação de Input ⚠️ ALTO
+### 2. CSRF Protection ⚠️ MÉDIO
+
+```bash
+npm install csurf cookie-parser
+```
+
+### 3. Rate Limiting ⚠️ MÉDIO
+
+```bash
+npm install express-rate-limit
+```
+
+### 4. Helmet para Headers de Segurança ⚠️ MÉDIO
+
+```bash
+npm install helmet
+```
+
+---
+
+## 📋 Checklist Pré-Deploy
+
+- [x] Implementar Redis para sessões
+- [x] Configurar OAuth state parameter
+- [x] Remover logs sensíveis
+- [ ] Adicionar validação de input
+- [ ] Implementar CSRF protection
+- [ ] Adicionar rate limiting
+- [ ] Instalar helmet
+- [ ] Configurar HTTPS em produção
+- [ ] Testar em ambiente de staging
+
+---
+
+## 🔐 Configuração Atual
+
+### Redis/Memurai
+
+```typescript
+// session-config.ts
+const redisClient = createClient({
+  host: "127.0.0.1",
+  port: 6379,
+});
+
+const sessionConfig = {
+  store: new RedisStore({
+    client: redisClient,
+    ttl: 60 * 60 * 24,
+  }),
+  secret: process.env.SESSION_SECRET,
+  cookie: {
+    httpOnly: true,
+    maxAge: 1000 * 60 * 60 * 24,
+    sameSite: "lax",
+  },
+};
+```
+
+### OAuth Flow
+
+- ✅ State parameter implementado
+- ✅ Tokens temporários durante redirect
+- ✅ Sessões persistentes no Redis
+
+---
+
+## 🚨 Vulnerabilidades Conhecidas dos Pacotes
+
+Execute regularmente:
+
+```bash
+npm audit
+npm audit fix
+npm update
+```
+
+---
+
+**Data do Relatório:** 26 de Novembro de 2025  
+**Status:** ✅ Principais vulnerabilidades corrigidas | ⚠️ Melhorias recomendadas para produção
 
 **Adicionar validação:**
 

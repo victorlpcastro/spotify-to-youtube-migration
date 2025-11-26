@@ -9,7 +9,7 @@ import { SpotifyTokens } from "../types";
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 
-export const getSpotifyAuthUrl = (): string => {
+export const getSpotifyAuthUrl = (state?: string): string => {
   const scopes = [
     "user-read-private",
     "user-read-email",
@@ -24,6 +24,10 @@ export const getSpotifyAuthUrl = (): string => {
     scope: scopes.join(" "),
     show_dialog: "true",
   });
+
+  if (state) {
+    params.append("state", state);
+  }
 
   return `${SPOTIFY_AUTH_URL}?${params.toString()}`;
 };
@@ -53,10 +57,6 @@ export const exchangeSpotifyCodeForToken = async (
 
     return response.data as SpotifyTokens;
   } catch (error: any) {
-    console.error(
-      "Erro ao trocar código por token (Spotify):",
-      error.response?.data || error.message
-    );
     throw new Error("Falha na autenticação do Spotify");
   }
 };

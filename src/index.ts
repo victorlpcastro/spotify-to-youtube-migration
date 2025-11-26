@@ -1,5 +1,7 @@
 import express, { Request, Response } from "express";
+import session from "express-session";
 import { PORT } from "./config/api-config";
+import { sessionConfig, redisClient } from "./config/session-config";
 import {
   getSpotifyAuthUrl,
   exchangeSpotifyCodeForToken,
@@ -13,16 +15,21 @@ import { SpotifyService } from "./services/spotify-service";
 import { YouTubeService } from "./services/youtube-service";
 import { MigrationController } from "./controllers/migration-controller";
 import { SpotifyTokens, YouTubeTokens } from "./types";
+import { TempTokenManager } from "./utils/temp-token-manager";
+
+// Declaração de tipos para sessão
+declare module "express-session" {
+  interface SessionData {
+    spotifyTokens?: SpotifyTokens;
+    youtubeTokens?: YouTubeTokens;
+  }
+}
 
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-const userTokens: {
-  spotify?: SpotifyTokens;
-  youtube?: YouTubeTokens;
-} = {};
+app.use(session(sessionConfig));
 
 // --- STYLES & TEMPLATES (Para manter o código limpo e consistente) ---
 const globalStyles = `
@@ -128,6 +135,12 @@ const globalStyles = `
 // --- ROUTES ---
 
 app.get("/", (req: Request, res: Response) => {
+  console.log(`📄 Página inicial - Session ID: ${req.sessionID}`);
+  console.log(
+    `🔍 Tokens na sessão: Spotify=${!!req.session
+      .spotifyTokens}, YouTube=${!!req.session.youtubeTokens}`
+  );
+
   res.send(`
         <!DOCTYPE html>
         <html>
@@ -145,7 +158,7 @@ app.get("/", (req: Request, res: Response) => {
                     <div class="status-item">
                         <span>Spotify</span>
                         ${
-                          userTokens.spotify
+                          req.session.spotifyTokens
                             ? '<b class="connected">● Conectado</b>'
                             : '<b class="disconnected">○ Pendente</b>'
                         }
@@ -153,7 +166,7 @@ app.get("/", (req: Request, res: Response) => {
                     <div class="status-item">
                         <span>YouTube</span>
                         ${
-                          userTokens.youtube
+                          req.session.youtubeTokens
                             ? '<b class="connected">● Conectado</b>'
                             : '<b class="disconnected">○ Pendente</b>'
                         }
@@ -161,19 +174,19 @@ app.get("/", (req: Request, res: Response) => {
                 </div>
 
                 ${
-                  !userTokens.spotify
+                  !req.session.spotifyTokens
                     ? `<a href="/auth/spotify" class="button spotify">Conectar Spotify</a>`
                     : ""
                 }
                 
                 ${
-                  !userTokens.youtube
+                  !req.session.youtubeTokens
                     ? `<a href="/auth/youtube" class="button youtube">Conectar YouTube</a>`
                     : ""
                 }
 
                 ${
-                  userTokens.spotify && userTokens.youtube
+                  req.session.spotifyTokens && req.session.youtubeTokens
                     ? `
                     <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #333;">
                         <p>Tudo pronto!</p>
@@ -189,17 +202,79 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 app.get("/auth/spotify", (req: Request, res: Response) => {
-  const authUrl = getSpotifyAuthUrl();
+  const stateCode = TempTokenManager.generateStateCode();
+
+  if (req.session.youtubeTokens) {
+    TempTokenManager.saveTokens(
+      stateCode,
+      undefined,
+      req.session.youtubeTokens
+    );
+    console.log(
+      "💾 Tokens do YouTube salvos antes de redirecionar para Spotify"
+    );
+  }
+
+  const authUrl = getSpotifyAuthUrl(stateCode);
+  console.log(`🔐 State code gerado: ${stateCode}`);
   res.redirect(authUrl);
 });
 
 app.get("/callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;
+  const stateCode = req.query.state as string; // State code agora vem da URL do OAuth
+
   if (!code) return res.status(400).send("Código não fornecido");
 
   try {
     const tokens = await exchangeSpotifyCodeForToken(code);
-    userTokens.spotify = tokens;
+
+    console.log("✅ Spotify: Tokens recebidos");
+    console.log(`🆔 Session ID: ${req.sessionID}`);
+    console.log(`🔐 State code recebido: ${stateCode}`);
+
+    // Recuperar tokens do YouTube do armazenamento temporário usando o state code
+    let existingYoutubeTokens = req.session.youtubeTokens;
+
+    if (stateCode) {
+      const tempTokens = TempTokenManager.getTokens(stateCode);
+      if (tempTokens?.youtubeTokens) {
+        existingYoutubeTokens = tempTokens.youtubeTokens;
+        console.log(
+          `📥 Tokens do YouTube recuperados do armazenamento temporário (state: ${stateCode})`
+        );
+      } else {
+        console.log(
+          `⚠️ Nenhum token temporário encontrado para state: ${stateCode}`
+        );
+      }
+    }
+
+    console.log(
+      `🔍 Sessão antes: Spotify=${!!req.session
+        .spotifyTokens}, YouTube=${!!existingYoutubeTokens}`
+    );
+
+    // Salvar ambos os tokens na sessão
+    req.session.spotifyTokens = tokens;
+
+    if (existingYoutubeTokens) {
+      req.session.youtubeTokens = existingYoutubeTokens;
+      console.log("✅ Tokens do YouTube restaurados na sessão");
+    }
+
+    // Salvar sessão
+    await new Promise<void>((resolve) => req.session.save(() => resolve()));
+
+    console.log(
+      `🔍 Sessão depois: Spotify=${!!req.session.spotifyTokens}, YouTube=${!!req
+        .session.youtubeTokens}`
+    );
+
+    // Limpar armazenamento temporário
+    if (stateCode) {
+      TempTokenManager.clearTokens(stateCode);
+    }
 
     res.send(`
             <!DOCTYPE html>
@@ -224,17 +299,79 @@ app.get("/callback", async (req: Request, res: Response) => {
 });
 
 app.get("/auth/youtube", (req: Request, res: Response) => {
-  const authUrl = getYouTubeAuthUrl();
+  const stateCode = TempTokenManager.generateStateCode();
+
+  if (req.session.spotifyTokens) {
+    TempTokenManager.saveTokens(
+      stateCode,
+      req.session.spotifyTokens,
+      undefined
+    );
+    console.log(
+      "💾 Tokens do Spotify salvos antes de redirecionar para YouTube"
+    );
+  }
+
+  const authUrl = getYouTubeAuthUrl(stateCode);
+  console.log(`🔐 State code gerado: ${stateCode}`);
   res.redirect(authUrl);
 });
 
 app.get("/google-callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;
+  const stateCode = req.query.state as string; // State code agora vem da URL do OAuth
+
   if (!code) return res.status(400).send("Código não fornecido");
 
   try {
     const tokens = await exchangeYouTubeCodeForToken(code);
-    userTokens.youtube = tokens;
+
+    console.log("✅ YouTube: Tokens recebidos");
+    console.log(`🆔 Session ID: ${req.sessionID}`);
+    console.log(`🔐 State code recebido: ${stateCode}`);
+
+    // Recuperar tokens do Spotify do armazenamento temporário usando o state code
+    let existingSpotifyTokens = req.session.spotifyTokens;
+
+    if (stateCode) {
+      const tempTokens = TempTokenManager.getTokens(stateCode);
+      if (tempTokens?.spotifyTokens) {
+        existingSpotifyTokens = tempTokens.spotifyTokens;
+        console.log(
+          `📥 Tokens do Spotify recuperados do armazenamento temporário (state: ${stateCode})`
+        );
+      } else {
+        console.log(
+          `⚠️ Nenhum token temporário encontrado para state: ${stateCode}`
+        );
+      }
+    }
+
+    console.log(
+      `🔍 Sessão antes: Spotify=${!!existingSpotifyTokens}, YouTube=${!!req
+        .session.youtubeTokens}`
+    );
+
+    // Salvar ambos os tokens na sessão
+    req.session.youtubeTokens = tokens;
+
+    if (existingSpotifyTokens) {
+      req.session.spotifyTokens = existingSpotifyTokens;
+      console.log("✅ Tokens do Spotify restaurados na sessão");
+    }
+
+    // Salvar sessão
+    await new Promise<void>((resolve) => req.session.save(() => resolve()));
+
+    console.log(
+      `🔍 Sessão depois: Spotify=${!!req.session.spotifyTokens}, YouTube=${!!req
+        .session.youtubeTokens}`
+    );
+
+    // Limpar armazenamento temporário
+    if (stateCode) {
+      TempTokenManager.clearTokens(stateCode);
+    }
 
     res.send(`
             <!DOCTYPE html>
@@ -259,10 +396,12 @@ app.get("/google-callback", async (req: Request, res: Response) => {
 });
 
 app.get("/playlists", async (req: Request, res: Response) => {
-  if (!userTokens.spotify) return res.redirect("/");
+  if (!req.session.spotifyTokens) return res.redirect("/");
 
   try {
-    const spotifyService = new SpotifyService(userTokens.spotify.access_token);
+    const spotifyService = new SpotifyService(
+      req.session.spotifyTokens.access_token
+    );
     const playlists = await spotifyService.getUserPlaylists();
 
     let html = `
@@ -307,15 +446,18 @@ app.get("/playlists", async (req: Request, res: Response) => {
 });
 
 app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
-  if (!userTokens.spotify || !userTokens.youtube) return res.redirect("/");
+  if (!req.session.spotifyTokens || !req.session.youtubeTokens)
+    return res.redirect("/");
 
   const { playlistId } = req.params;
   const privacyStatus =
     (req.query.privacy as "private" | "public" | "unlisted") || "private";
 
   try {
-    const spotifyService = new SpotifyService(userTokens.spotify.access_token);
-    const youtubeClient = getAuthenticatedClient(userTokens.youtube);
+    const spotifyService = new SpotifyService(
+      req.session.spotifyTokens.access_token
+    );
+    const youtubeClient = getAuthenticatedClient(req.session.youtubeTokens);
     const youtubeService = new YouTubeService(youtubeClient);
     const migrationController = new MigrationController(
       spotifyService,
@@ -384,6 +526,79 @@ app.get("/migrate/:playlistId", async (req: Request, res: Response) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log("Servidor rodando na porta " + PORT);
+// Capturar exceções não tratadas
+process.on("uncaughtException", (error) => {
+  console.error("❌ Exceção não tratada:", error);
+  // Não encerrar o processo
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ Promise rejeitada não tratada:", reason);
+  // Não encerrar o processo
+});
+
+// Prevenir que o processo encerre inesperadamente
+process.stdin.resume();
+
+// Iniciar servidor Express
+const server = app.listen(PORT, () => {
+  console.log(`
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║   🚀 Servidor rodando na porta ${PORT}                        ║
+║   📡 Redis conectado e pronto                              ║
+║                                                            ║
+║   Interface Web:                                           ║
+║   http://localhost:${PORT}                                     ║
+║                                                            ║
+║   Autenticação:                                            ║
+║   GET  /auth/spotify - Conectar Spotify                    ║
+║   GET  /auth/youtube - Conectar YouTube                    ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
+  `);
+
+  console.log("\n💡 Pressione Ctrl+C para encerrar o servidor\n");
+});
+
+// Garantir que o servidor não encerre
+server.on("error", (error) => {
+  console.error("❌ Erro no servidor:", error);
+});
+
+// Handler de encerramento gracioso (apenas quando explicitamente solicitado)
+let isShuttingDown = false;
+
+process.on("SIGINT", () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log("\n\n🛑 SIGINT recebido - Encerrando servidor...");
+  server.close(() => {
+    console.log("✅ Servidor HTTP encerrado");
+    redisClient.quit(() => {
+      console.log("✅ Conexão Redis encerrada");
+      process.exit(0);
+    });
+  });
+
+  // Timeout de segurança
+  setTimeout(() => {
+    console.log("⚠️ Forçando encerramento...");
+    process.exit(1);
+  }, 5000);
+});
+
+process.on("SIGTERM", () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log("\n\n🛑 SIGTERM recebido - Encerrando servidor...");
+  server.close(() => {
+    console.log("✅ Servidor HTTP encerrado");
+    redisClient.quit(() => {
+      console.log("✅ Conexão Redis encerrada");
+      process.exit(0);
+    });
+  });
 });

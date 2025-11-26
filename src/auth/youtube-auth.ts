@@ -15,7 +15,7 @@ export const createOAuth2Client = (): OAuth2Client => {
   );
 };
 
-export const getYouTubeAuthUrl = (): string => {
+export const getYouTubeAuthUrl = (state?: string): string => {
   const oauth2Client = createOAuth2Client();
 
   const scopes = ["https://www.googleapis.com/auth/youtube.force-ssl"];
@@ -24,6 +24,7 @@ export const getYouTubeAuthUrl = (): string => {
     access_type: "offline",
     scope: scopes,
     prompt: "consent",
+    state: state || "",
   });
 
   console.log("🔗 YouTube Auth URL gerada:", authUrl);
@@ -51,16 +52,6 @@ export const exchangeYouTubeCodeForToken = async (
 
     return tokens as YouTubeTokens;
   } catch (error: any) {
-    console.error(
-      "❌ Erro ao trocar código por token (YouTube):",
-      error.message
-    );
-    console.error("📊 Detalhes do erro:", {
-      code: error.code,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-    });
     throw new Error(`Falha na autenticação do YouTube: ${error.message}`);
   }
 };

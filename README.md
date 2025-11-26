@@ -7,6 +7,8 @@ Aplicação completa para migrar playlists do Spotify para o YouTube de forma au
 ## ✨ Funcionalidades
 
 - ✅ Autenticação OAuth 2.0 com Spotify e YouTube
+- ✅ Sessões persistentes com Redis (mantém login após reiniciar)
+- ✅ State parameter para segurança OAuth
 - ✅ Listagem de todas as playlists do usuário no Spotify
 - ✅ Criação automática de playlists no YouTube
 - ✅ Busca inteligente de músicas no YouTube
@@ -19,6 +21,8 @@ Aplicação completa para migrar playlists do Spotify para o YouTube de forma au
 
 - **Node.js** + **TypeScript**
 - **Express.js** - Framework web
+- **Redis** - Armazenamento de sessões (Memurai no Windows)
+- **Connect-Redis** - Session store para Express
 - **Axios** - Cliente HTTP
 - **Spotify Web API Node** - SDK oficial do Spotify
 - **Google APIs** - SDK oficial do YouTube
@@ -28,7 +32,28 @@ Aplicação completa para migrar playlists do Spotify para o YouTube de forma au
 
 - Node.js (versão 14 ou superior)
 - NPM ou Yarn
+- **Redis** ou **Memurai** (Windows) rodando na porta 6379
 - Credenciais das APIs (veja configuração abaixo)
+
+### Instalando Redis/Memurai
+
+**Windows (Memurai):**
+
+```bash
+# Download: https://www.memurai.com/get-memurai
+# Ou via Chocolatey:
+choco install memurai-developer
+```
+
+**Linux/Mac:**
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install redis-server
+
+# Mac
+brew install redis
+```
 
 ## 🚀 Instalação
 
@@ -82,22 +107,34 @@ NODE_ENV=development
 
 ## 🎮 Como Usar
 
-### 1. Inicie o servidor
+### 1. Inicie o Redis/Memurai
+
+```bash
+# Windows (Memurai)
+memurai
+
+# Linux/Mac
+redis-server
+```
+
+### 2. Inicie o servidor
 
 ```bash
 npm run dev
 ```
 
-### 2. Acesse a aplicação
+### 3. Acesse a aplicação
 
 Abra seu navegador e vá para: `http://localhost:8888`
 
-### 3. Conecte suas contas
+### 4. Conecte suas contas
 
 1. Clique em "🎧 Conectar com Spotify"
 2. Autorize o aplicativo
 3. Clique em "📺 Conectar com YouTube"
 4. Autorize o aplicativo
+
+**💡 Dica:** Suas credenciais ficam salvas no Redis por 24 horas!
 
 ### 4. Migre suas playlists
 

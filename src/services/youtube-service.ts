@@ -70,7 +70,6 @@ export class YouTubeService {
 
       return null;
     } catch (error: any) {
-      console.error(`Erro ao buscar vídeo "${query}":`, error.message);
       return null;
     }
   }
